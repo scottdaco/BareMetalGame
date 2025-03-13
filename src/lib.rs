@@ -16,7 +16,12 @@ use core::{
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct LetterMover {
+    colors: [Color; 13],
+    chars: usize,
+    randv: usize,
     collection: usize,
+    current_collection: usize,
+    level: usize,
     col: usize,
     row: usize,
     dx: usize,
@@ -29,21 +34,21 @@ pub struct LetterMover {
 
 pub fn rand1<const LIMIT: usize>(seed: usize) -> usize {
     let mut r = seed ^ ((seed >> 7) ^ (seed << 3));
-    // if r&1 != 0 {r=!r^r;}
+    // if r&1 != 0 {r=!r}
     return r.mod_floor(&LIMIT);
 }
+
+
+// pub fn rand1<const LIMIT: usize>(seed: usize) -> usize {
+    // let mut r = (16361*seed) ^ !((seed << 8) | (seed));
+    // return r.mod_floor(&LIMIT);
+// }
 
 
 pub fn rand<const LIMIT: usize>(seed: usize) -> usize {
-    let mut r = (16361) ^ !((seed << 8) | (seed));
+    let mut r = (seed ^ ((seed >> 7) ^ (seed << 3))) ^ 1;
     return r.mod_floor(&LIMIT);
 }
-
-
-// pub fn rand<const LIMIT: usize>(seed: usize) -> usize {
-//     let r = (seed >> 1) | (seed >> 2) | (seed >> 3);
-//     return r.mod_floor(&LIMIT);
-// }
 
 
 
@@ -63,7 +68,12 @@ pub fn sub1<const LIMIT: usize>(value: usize) -> usize {
 impl Default for LetterMover {
     fn default() -> Self {
         Self {
+            colors: [Color::Cyan; 13],
             collection: 0,
+            current_collection: 0,
+            chars: 0,
+            level: 0,
+            randv: 0,
             // letters: ['A'; BUFFER_WIDTH],
             // num_letters: 1,
             // next_letter: 1,
@@ -80,35 +90,93 @@ impl LetterMover {
         (0..1).map(|n| safe_add::<BUFFER_WIDTH>(n, self.col))
     }
 
+
+
+    pub fn setColor(&mut self) {
+        // self.colors[0] = Color::Cyan;
+        for i in 0..13 {
+            let mut c = rand::<16>(self.level+self.collection+i+self.randv);
+            let mut e = 0;
+            while c == 4 || c == 13 {
+                // self.collection+=1;
+                c = rand::<16>(self.level+self.collection+i+e+self.randv);
+                e+=1;
+            }
+            self.colors[i] = Color::from(c as u8);
+        }
+    }
+
+
+    pub fn incLevel(&mut self) {
+        if self.current_collection >= 10 {
+            self.randv+=rand::<100>(self.col*self.level+self.collection);
+            self.current_collection = 0;
+            self.level+=1;
+            self.reset();
+        }
+    }
+
+    pub fn clear(&mut self) {
+        for i in 1..BUFFER_WIDTH-1 {
+            for j in 1..BUFFER_HEIGHT {
+                let l = rand::<12>(self.level+j*i+self.randv)%(1+(self.level/5));
+                let chr = rand::<94>(self.level+j*i+self.randv)%(1+(self.level/5));
+                let c1 = self.colors[l];
+                let c2 = self.colors[l+1];
+                plot(((chr+32) as u8) as char, i, j, ColorCode::new(c1, c2));
+            }
+        }
+    }
+
+    pub fn populate(&mut self) {
+        for i in 0..10 {
+            let x = rand::<{BUFFER_WIDTH-1}>(i+self.level*10+self.randv);
+            if peek(safe_add::<{BUFFER_WIDTH-1}>(x, 0), safe_add::<BUFFER_HEIGHT>(x, 0)).1.foreground() == Color::from(13)  {
+                self.current_collection+=1;
+                self.collection+=1;
+            }
+            // else {
+            let l = rand::<12>(self.level+i+self.randv)%(1+(self.level/5));
+            let chr = rand::<94>(self.level+i+self.randv)%(1+(self.level/5));
+            let mut c = self.colors[l];
+            if chr == 0 {
+                c = Color::Pink
+            }
+            plot(((chr+32) as u8) as char, rand::<{BUFFER_WIDTH-1}>(x), rand::<BUFFER_HEIGHT>(x|BUFFER_HEIGHT), ColorCode::new(Color::Pink, c));
+            // }
+        }
+    }
+
     pub fn tick(&mut self) {
+        // self.check();
         self.update_current();
         self.update_location();
         self.draw_current();
-        // self.check();
+        self.incLevel();
     }
 
 
     pub fn reset(&mut self) {
-        for i in 0..BUFFER_WIDTH {
-            for j in 0..BUFFER_HEIGHT {
-                plot(' ', i, j, ColorCode::new(Color::Cyan, Color::Cyan));
-            }
-        }
-        for i in 0..10 {
-            plot(' ', rand::<BUFFER_WIDTH>(i), rand::<BUFFER_HEIGHT>(i), ColorCode::new(Color::Pink, Color::Pink));
-        }
+        self.setColor();
+        self.clear();
+        self.populate();
         self.col = BUFFER_WIDTH / 2;
         self.row = BUFFER_HEIGHT / 2;
     }
 
 
     fn update_current(&mut self) {
-        for i in 1..BUFFER_WIDTH {
+        for i in 1..BUFFER_WIDTH-1 {
             for j in 1..BUFFER_HEIGHT {
         // for x in self.letter_columns() {
                 if (j != self.row) || (i != self.col) {
                     if peek(i, j).1.foreground() != Color::from(13)  {
-                        plot(' ', i, j, ColorCode::new(Color::Cyan, Color::Cyan));
+
+                        let l = rand::<12>(self.level+j*i+self.randv)%(1+(self.level/5));
+                        let chr = rand::<94>(self.level+j*i+self.randv)%(1+(self.level/5));
+                        let c1 = self.colors[l];
+                        let c2 = self.colors[l+1];
+                        plot(((chr+32) as u8) as char, i, j, ColorCode::new(c1, c2));
                     }
                 }
                 // else if (j == self.row) && (i == self.col) {
@@ -118,14 +186,25 @@ impl LetterMover {
                 // }
             }
         }
-        plot((48+self.collection as u8) as char, 0, 0, ColorCode::new(Color::White, Color::Black));
+        plot((48+((self.collection/100)%100) as u8) as char, 0, 0, ColorCode::new(Color::White, Color::Black));
+        plot((48+((self.collection/10)%10) as u8) as char, 1, 0, ColorCode::new(Color::White, Color::Black));
+        plot((48+(self.collection%10) as u8) as char, 2, 0, ColorCode::new(Color::White, Color::Black));
+
+        plot((48+((self.level/100)%100) as u8) as char, BUFFER_WIDTH-3, 0, ColorCode::new(Color::White, Color::Black));
+        plot((48+((self.level/10)%10) as u8) as char, BUFFER_WIDTH-2, 0, ColorCode::new(Color::White, Color::Black));
+        plot((48+(self.level%10) as u8) as char, BUFFER_WIDTH-1, 0, ColorCode::new(Color::White, Color::Black));
     }
 
 
     fn update_location(&mut self) {
-        self.check();
-        self.col = safe_add::<BUFFER_WIDTH>(self.col, self.dx);
-        self.row = safe_add::<BUFFER_HEIGHT>(self.row, self.dy);
+        let x = safe_add::<BUFFER_WIDTH>(self.col, self.dx);
+        let y = safe_add::<BUFFER_HEIGHT>(self.row, self.dy);
+        if peek(x ,y).1.foreground() == Color::from(13) {
+            self.collection+=1;
+            self.current_collection+=1;
+        }
+        self.col = x;
+        self.row = y;
         // self.check();
         self.dx = 0;
         self.dy = 0;
@@ -163,16 +242,7 @@ impl LetterMover {
     }
     // }
 
-    pub fn check(&mut self) {
-        let x = safe_add::<{BUFFER_WIDTH}>(self.col, self.dx);
-        let y = safe_add::<{BUFFER_WIDTH}>(self.row, self.dy);
-        // peek(x ,y).1.background();
-        if peek(x ,y).1.background() == Color::from(13) {
-            self.collection+=1;
-        }
-        // self.col = self.col;
-        // self.row = self.row;
-    }
+
 
 
     pub fn key(&mut self, key: DecodedKey) {
@@ -196,6 +266,15 @@ impl LetterMover {
             KeyCode::ArrowDown => {
                 self.dy = add1::<BUFFER_HEIGHT>(self.dy);
             }
+            KeyCode::ArrowDown => {
+                self.dy = add1::<BUFFER_HEIGHT>(self.dy);
+            }
+            KeyCode::LShift => {
+                self.current_collection = 10;
+            }
+            // KeyCode::LShift => {
+                // self.populate();
+            // }
             _ => {}
         }
     }
